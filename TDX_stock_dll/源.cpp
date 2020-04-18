@@ -395,32 +395,19 @@ static void PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH
 			{
 				if (HIGH[i] < possibleTop)
 				{
-					if (lastStatus == IS_PEAK)
+					if (outputDecidePoint)
+						pfOUT[i] = 0;
+					else if (lastStatus != IS_PEAK)
 					{
-						posTopBars = i - 1;
-
-						// 如果当前是个底，上一个状态也是底，那么当前这个底比上一个底更低，所以上一个底就不是底了
 						for (int j = posTopBars - 1; j > curBotBars; j--)
 						{
 							pfOUT[j] = j - curBotBars;
 						}
-					}
-					else
+						curTopBars = posTopBars;
+						posTopBars = -1;
 						lastStatus = IS_PEAK;
-
-
-					if (outputDecidePoint)
-						pfOUT[i] = 0;
-					else
-					{
-						for (int j = posTopBars - 1; j > curBotBars; j--)
-						{
-							pfOUT[j] = j - posBotBars;
-						}
 					}
 
-					curTopBars = posTopBars;
-					posTopBars = -1;
 					posBotBars = i;
 					possibleBot = LOW[i];
 					possibleTop = HIGH[i];
@@ -432,135 +419,88 @@ static void PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH
 					posTopBars = posBotBars = i;
 				}
 			}
-			else
+			else if (HIGH[i] > possibleTop)
 			{
-				if (HIGH[i] > possibleTop)
+				if (outputDecidePoint)
+					pfOUT[i] = 0;
+				else if (lastStatus != IS_TROUGH)
 				{
-					if (outputDecidePoint)
-						pfOUT[i] = 0;
-					else
+					for (int j = posBotBars - 1; j > curTopBars; j--)
 					{
-						if (lastStatus == IS_TROUGH)
-						{
-							posBotBars = i - 1;
-
-							// 如果当前是个底，上一个状态也是底，那么当前这个底比上一个底更低，所以上一个底就不是底了
-							for (int j = posBotBars - 1; j > curTopBars; j--)
-							{
-								pfOUT[j] = - (j - curTopBars);
-							}
-						}
-						else
-							lastStatus = IS_TROUGH;
-
-						for (int j = posBotBars -1; j > curTopBars; j--)
-						{
-							pfOUT[j] = -(j - curTopBars);
-
-						}
+						pfOUT[j] = -(j - curTopBars);
 					}
-
 					curBotBars = posBotBars;
 					posBotBars = -1;
-					possibleTop = HIGH[i];
-					possibleBot = LOW[i];
-					posTopBars = i;
-					goal = SEARCHING_TOP;
-					continue;
+					lastStatus = IS_TROUGH;
 				}
-				else
-					continue;
-			}
+				posTopBars = i;
+				possibleBot = LOW[i];
+				possibleTop = HIGH[i];
+				goal = SEARCHING_TOP;
+				continue;
+			}else
+				continue;
 		}
 		else if (goal == SEARCHING_TOP)
 		{
 			if (HIGH[i] >= possibleTop)
 			{
-				if (LOW[i] >= possibleBot)
-				{
-					possibleBot = LOW[i];
-					possibleTop = HIGH[i];
-					posTopBars = posBotBars = i;
-
-				}
-				else {
-					possibleBot = LOW[i];
-					possibleTop = HIGH[i];
-					posTopBars = posBotBars = i;
-					goal = UNSURE;
-				}
+				possibleBot = LOW[i];
+				possibleTop = HIGH[i];
+				posTopBars = i;
 			}
-			else
+			else if (LOW[i] < possibleBot)
 			{
-				if (LOW[i] < possibleBot)
+				if (outputDecidePoint)
+					pfOUT[i] = 0;
+				else
 				{
-					if (outputDecidePoint)
-						pfOUT[i] = 0;
-					else
+					for (int j = posTopBars -1; j > curBotBars ; j--)
 					{
-						for (int j = i; j >= posTopBars; j--)
-						{
-							pfOUT[j] = -(j - posTopBars);
-						}
+						pfOUT[j] = j - curBotBars;
 					}
+				}
 
-					curTopBars = posTopBars;
-					posTopBars = -1;
-					posBotBars = i;
-					possibleBot = LOW[i];
-					possibleTop = HIGH[i];
-					goal = SEARCHING_BOT;
-					lastStatus = IS_PEAK;
-				}
-				else {
-					goal = UNSURE;
-				}
-			}
+				curTopBars = posTopBars;
+				posTopBars = -1;
+				posBotBars = i;
+				possibleBot = LOW[i];
+				possibleTop = HIGH[i];
+				goal = SEARCHING_BOT;
+				lastStatus = IS_PEAK;
+			}else
+				goal = UNSURE;
 		}
 		else
 		{
 			if (LOW[i] <= possibleBot)
 			{
-				if (HIGH[i] < possibleTop)
-				{
-					possibleBot = LOW[i];
-					possibleTop = HIGH[i];
-					posTopBars = posBotBars = i;
-				}
-				else {
-					possibleBot = LOW[i];
-					possibleTop = HIGH[i];
-					posTopBars = posBotBars = i;
-					goal = UNSURE;
-				}
+				possibleBot = LOW[i];
+				possibleTop = HIGH[i];
+				posBotBars = i;
 			}
-			else
+			else if (HIGH[i] > possibleTop)
 			{
-				if (HIGH[i] > possibleTop)
-				{
-					if (outputDecidePoint)
-						pfOUT[i] = 0;
-					else
-					{
-						for (int j = i; j >= posBotBars; j--)
-						{
-							pfOUT[j] = j - posBotBars;
-						}
-					}
-
-					curBotBars = posBotBars;
-					posBotBars = -1;
-					posTopBars = i;
-					possibleBot = LOW[i];
-					possibleTop = HIGH[i];
-					goal = SEARCHING_TOP;
-					lastStatus = IS_TROUGH;
-				}
+				if (outputDecidePoint)
+					pfOUT[i] = 0;
 				else
 				{
-					goal = UNSURE;
+					for (int j = posBotBars - 1; j > curTopBars; j--)
+					{
+						pfOUT[j] = -(j - curTopBars);
+					}
 				}
-			}
+
+				curBotBars = posBotBars;
+				posBotBars = -1;
+				posTopBars = i;
+				possibleBot = LOW[i];
+				possibleTop = HIGH[i];
+				goal = SEARCHING_TOP;
+				lastStatus = IS_TROUGH;
+			}else
+				goal = UNSURE;
+
 		}
 	}
 
@@ -568,6 +508,8 @@ static void PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH
 
 void PEAK_TROUGH_BARS_KCOUNT_STEP2(int DataLen, float* pfOUT, float* HIGH, float* LOW, float* _KCOUNT_AND_decidePoint)
 {
+	memset(pfOUT, 0, DataLen * sizeof(float));
+
 	// criticalPoint是指： 判定ZIG拐点 的那个决策点，也就是比拐点 要晚一点的那个位置，实现了5个点的拐点幅度
 	float PERCENT = 20;
 	float decidePoint = 0;
@@ -586,23 +528,23 @@ void PEAK_TROUGH_BARS_KCOUNT_STEP2(int DataLen, float* pfOUT, float* HIGH, float
 		{
 			if (i > 0 && i < (DataLen - 1))
 			{
-				if (peaks_bottoms[i - 1] > 0 && peaks_bottoms[i + 1] < 0)
+				if (peaks_bottoms[i - 1] > 0 || peaks_bottoms[i + 1] < 0 || pfOUT[i-1]<0)
 					pfOUT[i] = 1; // peak
-				else
+				else if (peaks_bottoms[i - 1] < 0 || peaks_bottoms[i + 1] > 0 || pfOUT[i - 1]>0)
 					pfOUT[i] = -1; // bottom
 			}
 			else if (i == 0)
 			{
 				if (peaks_bottoms[1] > 0)
 					pfOUT[0] = -1;
-				else
+				else if (peaks_bottoms[1] < 0)
 					pfOUT[0] = 1;
 			}
 			else // i == DataLen -1
 			{
-				if (peaks_bottoms[DataLen-2] > 0)
+				if (peaks_bottoms[DataLen-2] > 0 || pfOUT[DataLen - 2]<0)
 					pfOUT[DataLen-1] = 1;
-				else
+				else if (peaks_bottoms[DataLen - 2] < 0 || pfOUT[DataLen - 2]>0)
 					pfOUT[DataLen-1] = -1;
 			}
 		}
