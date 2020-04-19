@@ -5,6 +5,13 @@
 
 //生成的dll及相关依赖dll请拷贝到通达信安装目录的T0002/dlls/下面,再在公式管理器进行绑定
 static int const START_FROM = 13;
+typedef enum {
+	// 拐点性质
+	INIT = 0, //算法开始时未知状态
+	NON_PEAK_BOT = 0, // 峰 和 谷 之间的K线
+	IS_PEAK = 1, //峰
+	IS_TROUGH = -1  //谷
+} INFLECTION_POINT;
 
 void TOPRANGE_PERCENT(int DataLen, float* pfOUT, float* HIGH, float* HIGH_ADJUST)
 {
@@ -193,6 +200,12 @@ void TROUGH_BARS_ZIG(int DataLen, float* pfOUT, float* VAL, float* _ZIG_PERCENT,
 		}
 		else if (goal == SEARCHING_TOP)
 		{
+			/*
+			每次确认了底部后（当前位置较之前那个低点posBotBars上涨 ZIG_PERCENT)，则posBotBars变为curBotBars； 然后就开始SEARCHING_TOP。
+			SEARCHING_TOP无非两种情况：
+			(1) 不断创出新高(并且没有回撤超过ZIG_PERCENT)，不断更新posTopBars
+			(2) 出现了回撤相对于posTopBars达到了ZIG_PERCENT，此时posTopBars变为curTopBars；然后就进入了SEARCHING_BOT。
+			*/
 			if (VAL[i] > possibleTop)
 			{
 				posTopBars = i;
@@ -373,8 +386,16 @@ void PEAK_BARS_ZIG(int DataLen, float* pfOUT, float* VAL, float* _ZIG_PERCENT, f
 	}
 }
 
-static void PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH, float* LOW, float* _decidePoint)
+static INFLECTION_POINT PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH, float* LOW, float* _decidePoint)
 {
+	/*
+	本函数通过pfOUT参数，向调用者提供：
+	  当前点到上一个拐点（波峰 或者 波谷）的距离（k线数)：
+	  如果上一个拐点是波峰，则距离是负数（笔是向下的）
+	  如果上一个拐点是波谷，则距离是正数（笔是向上的)
+	本函数返回值：第一个bar，是波峰 还是 波谷；
+	*/
+
 	// criticalPoint是指： 判定ZIG拐点 的那个决策点，也就是比拐点 要晚一点的那个位置，实现了5个点的拐点幅度
 
 	memset(pfOUT, 0, DataLen * sizeof(float));
@@ -385,7 +406,7 @@ static void PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH
 	int curBotBars(-1), curTopBars(-1); // cur : current
 
 	enum { UNSURE, SEARCHING_TOP, SEARCHING_BOT } goal = UNSURE;
-	enum { INIT = 0, IS_PEAK,  IS_TROUGH} lastStatus = INIT;
+	INFLECTION_POINT lastStatus = INIT, firstBarIs = INIT;
 
 	for (int i = 1; i < DataLen; i++)
 	{
@@ -406,6 +427,8 @@ static void PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH
 						curTopBars = posTopBars;
 						posTopBars = -1;
 						lastStatus = IS_PEAK;
+						if (firstBarIs == INIT)
+							firstBarIs = IS_PEAK;
 					}
 
 					posBotBars = i;
@@ -432,6 +455,8 @@ static void PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH
 					curBotBars = posBotBars;
 					posBotBars = -1;
 					lastStatus = IS_TROUGH;
+					if (firstBarIs == INIT)
+						firstBarIs = IS_TROUGH;
 				}
 				posTopBars = i;
 				possibleBot = LOW[i];
@@ -455,7 +480,7 @@ static void PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH
 					pfOUT[i] = 0;
 				else
 				{
-					for (int j = posTopBars -1; j > curBotBars ; j--)
+					for (int j = posTopBars - 1; j > curBotBars; j--)
 					{
 						pfOUT[j] = j - curBotBars;
 					}
@@ -498,12 +523,13 @@ static void PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT, float* HIGH
 				possibleTop = HIGH[i];
 				goal = SEARCHING_TOP;
 				lastStatus = IS_TROUGH;
-			}else
+			}
+			else
 				goal = UNSURE;
 
 		}
 	}
-
+	return firstBarIs;
 }
 
 void PEAK_TROUGH_BARS_KCOUNT_STEP2(int DataLen, float* pfOUT, float* HIGH, float* LOW, float* _KCOUNT_AND_decidePoint)
@@ -517,40 +543,30 @@ void PEAK_TROUGH_BARS_KCOUNT_STEP2(int DataLen, float* pfOUT, float* HIGH, float
 	decidePoint = ((int)*_KCOUNT_AND_decidePoint < 0) ? 1 : 0;
 	int KCOUNT = abs((int)*_KCOUNT_AND_decidePoint) ? abs((int)*_KCOUNT_AND_decidePoint) : 5;
 
-	float*  peaks_bottoms = new float[DataLen];
+	float*  peaks_bottoms_distance = new float[DataLen];
 
-	PEAK_TROUGH_BARS_KCOUNT_STEP1(DataLen, peaks_bottoms, HIGH, LOW, &decidePoint);
+	INFLECTION_POINT firstBarIs = PEAK_TROUGH_BARS_KCOUNT_STEP1(DataLen, peaks_bottoms_distance, HIGH, LOW, &decidePoint);
+	INFLECTION_POINT alternate = firstBarIs;
 	for (int i = 0; i < DataLen; i++)
 	{
-		if (peaks_bottoms[i] != 0)
-			pfOUT[i] = 0;
-		else
-		{
-			if (i > 0 && i < (DataLen - 1))
-			{
-				if (peaks_bottoms[i - 1] > 0 || peaks_bottoms[i + 1] < 0 || pfOUT[i-1]<0)
-					pfOUT[i] = 1; // peak
-				else if (peaks_bottoms[i - 1] < 0 || peaks_bottoms[i + 1] > 0 || pfOUT[i - 1]>0)
-					pfOUT[i] = -1; // bottom
-			}
-			else if (i == 0)
-			{
-				if (peaks_bottoms[1] > 0)
-					pfOUT[0] = -1;
-				else if (peaks_bottoms[1] < 0)
-					pfOUT[0] = 1;
-			}
-			else // i == DataLen -1
-			{
-				if (peaks_bottoms[DataLen-2] > 0 || pfOUT[DataLen - 2]<0)
-					pfOUT[DataLen-1] = 1;
-				else if (peaks_bottoms[DataLen - 2] < 0 || pfOUT[DataLen - 2]>0)
-					pfOUT[DataLen-1] = -1;
-			}
+		if (peaks_bottoms_distance[i] != 0)
+			pfOUT[i] = NON_PEAK_BOT;
+		else {
+			pfOUT[i] = alternate;
+			alternate = (alternate == IS_PEAK) ? IS_TROUGH : IS_PEAK;
 		}
 	}
-	delete[] peaks_bottoms;
+	delete[] peaks_bottoms_distance;
+}
 
+void PEAK_TROUGH_BARS_KCOUNT_STEP3(int DataLen, float* pfOUT, float* HIGH, float* LOW, float* _KCOUNT_AND_decidePoint)
+{
+	float *peaks_and_bottoms = new float[DataLen];
+	PEAK_TROUGH_BARS_KCOUNT_STEP2(DataLen, peaks_and_bottoms, HIGH, LOW, _KCOUNT_AND_decidePoint);
+
+
+
+	delete[] peaks_and_bottoms;
 }
 
 static void merge(int DataLen, float* pfOUT, float* VAL1, float* VAL2)
