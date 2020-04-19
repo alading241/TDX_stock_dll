@@ -534,6 +534,9 @@ static INFLECTION_POINT PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT,
 
 void PEAK_TROUGH_BARS_KCOUNT_STEP2(int DataLen, float* pfOUT, float* HIGH, float* LOW, float* _KCOUNT_AND_decidePoint)
 {
+	/*
+	本函数通过pfOUT向调用者返回： 各个拐点
+	*/
 	memset(pfOUT, 0, DataLen * sizeof(float));
 
 	// criticalPoint是指： 判定ZIG拐点 的那个决策点，也就是比拐点 要晚一点的那个位置，实现了5个点的拐点幅度
@@ -559,13 +562,114 @@ void PEAK_TROUGH_BARS_KCOUNT_STEP2(int DataLen, float* pfOUT, float* HIGH, float
 	delete[] peaks_bottoms_distance;
 }
 
-void PEAK_TROUGH_BARS_KCOUNT_STEP3(int DataLen, float* pfOUT, float* HIGH, float* LOW, float* _KCOUNT_AND_decidePoint)
+void PEAK_TROUGH_BARS_KCOUNT_STEP3(int DataLen, float* pfOUT, float* HIGH, float* LOW, float* _ZIG_PERCENT)
 {
+	memset(pfOUT, NON_PEAK_BOT, DataLen * sizeof(float));
+
 	float *peaks_and_bottoms = new float[DataLen];
-	PEAK_TROUGH_BARS_KCOUNT_STEP2(DataLen, peaks_and_bottoms, HIGH, LOW, _KCOUNT_AND_decidePoint);
+	float KCOUNT_and_DecidePoint = 5;
+	float ZIG_PERCENT = *_ZIG_PERCENT ? *_ZIG_PERCENT : 2;
 
+	PEAK_TROUGH_BARS_KCOUNT_STEP2(DataLen, peaks_and_bottoms, HIGH, LOW, &KCOUNT_and_DecidePoint);
+	
+	float possibleBot(peaks_and_bottoms[0] == IS_TROUGH ? LOW[0] : HIGH[0]);
+	float possibleTop(peaks_and_bottoms[0] == IS_PEAK ? HIGH[0] : LOW[0]);
+	int posBotBars(peaks_and_bottoms[0] == IS_TROUGH ? 0 : -1); // pos: possible
+	int posTopBars(peaks_and_bottoms[0] == IS_PEAK ? 0:-1); // pos: possible
+	int curBotBars(-1), curTopBars(-1); // cur: current
 
+	enum { UNSURE, SEARCHING_TOP, SEARCHING_BOT } goal = UNSURE;
 
+	for (int i = 1; i < DataLen; i++)
+	{
+		if (peaks_and_bottoms[i] == NON_PEAK_BOT) {
+			pfOUT[i] = NON_PEAK_BOT;
+			continue;
+		}
+
+		if (goal == UNSURE)
+		{
+			if (peaks_and_bottoms[i] == IS_PEAK)
+			{
+				if (possibleBot*(1 + ZIG_PERCENT / 100) <= HIGH[i])
+				{
+					curBotBars = posBotBars;
+					posBotBars = -1;
+					possibleTop = HIGH[i];
+					posTopBars = i;
+					goal = SEARCHING_TOP;
+					pfOUT[curBotBars] = IS_TROUGH;
+				}
+				else if (HIGH[i] > possibleTop) {
+					posTopBars = i;
+					possibleTop = HIGH[i];
+				}
+			}
+			else {
+				//if (LOW[i] <= possibleTop*(1 - ZIG_PERCENT / 100))
+				if (LOW[i]* (1 + ZIG_PERCENT / 100) <= possibleTop)
+				{
+					curTopBars = posTopBars;
+					posTopBars = -1;
+					possibleBot = LOW[i];
+					posBotBars = i;
+					goal = SEARCHING_BOT;
+					pfOUT[curTopBars] = IS_PEAK;
+				}
+				else if (LOW[i] < possibleBot)
+				{
+					posBotBars = i;
+					possibleBot = LOW[i];
+				}
+			}
+		}
+		else if (goal == SEARCHING_TOP)
+		{
+			if (peaks_and_bottoms[i] == IS_PEAK) {
+				if (HIGH[i] > possibleTop) {
+					possibleTop = HIGH[i];
+					posTopBars = i;
+				}
+			}
+			else {
+				//if (LOW[i] <= possibleTop*(1 - ZIG_PERCENT / 100)) {
+				if (LOW[i]* (1 + ZIG_PERCENT / 100) <= possibleTop) {
+					curTopBars = posTopBars;
+					posTopBars = -1;
+					posBotBars = i;
+					possibleBot = LOW[i];
+					goal = SEARCHING_BOT;
+					pfOUT[curTopBars] = IS_PEAK;
+				}
+				else if (LOW[i] < LOW[curBotBars]) {
+					/* 
+					TODO:
+					如果采用的是：if (LOW[i] <= possibleTop*(1 - ZIG_PERCENT / 100)) 则可能出现LOW[i] < LOW[curBotBars]
+					如果采用的是：if (LOW[i]* (1 + ZIG_PERCENT / 100) <= possibleTop)，则不会出现 LOW[i] < LOW[curBotBars]
+					*/
+				}
+			}
+		}
+		else
+		{ // SEARCHING_BOT
+			if (peaks_and_bottoms[i] == IS_TROUGH) {
+				if (LOW[i] < possibleBot) {
+					possibleBot = LOW[i];
+					posBotBars = i;
+				}
+			}
+			else {
+				if (possibleBot*(1 + ZIG_PERCENT / 100) <= HIGH[i]) {
+					curBotBars = posBotBars;
+					posBotBars = -1;
+					posTopBars = i;
+					possibleTop = HIGH[i];
+					goal = SEARCHING_TOP;
+					pfOUT[curBotBars] = IS_TROUGH;
+				}
+			}
+		}
+	}
 	delete[] peaks_and_bottoms;
 }
 
@@ -713,6 +817,8 @@ PluginTCalcFuncInfo g_CalcFuncSets[] =
 	{ 10,(pPluginFUNC)&DEBUG_BARS_ZIG },
 
 	{ 11,(pPluginFUNC)&PEAK_TROUGH_BARS_KCOUNT_STEP2 },
+	{ 12,(pPluginFUNC)&PEAK_TROUGH_BARS_KCOUNT_STEP3 },
+	
 
 	{ 0,NULL },
 };
