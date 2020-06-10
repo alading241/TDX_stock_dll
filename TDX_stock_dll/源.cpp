@@ -577,6 +577,7 @@ void PEAK_TROUGH_BARS_KCOUNT_STEP3(int DataLen, float* pfOUT, float* HIGH, float
 	int posBotBars(peaks_and_bottoms[0] == IS_TROUGH ? 0 : -1); // pos: possible
 	int posTopBars(peaks_and_bottoms[0] == IS_PEAK ? 0:-1); // pos: possible
 	int curBotBars(-1), curTopBars(-1); // cur: current
+	INFLECTION_POINT  lastStatus = INIT;
 
 	enum { UNSURE, SEARCHING_TOP, SEARCHING_BOT } goal = UNSURE;
 
@@ -599,6 +600,7 @@ void PEAK_TROUGH_BARS_KCOUNT_STEP3(int DataLen, float* pfOUT, float* HIGH, float
 					posTopBars = i;
 					goal = SEARCHING_TOP;
 					pfOUT[curBotBars] = IS_TROUGH;
+					lastStatus = IS_TROUGH;
 				}
 				else if (HIGH[i] > possibleTop) {
 					posTopBars = i;
@@ -615,6 +617,7 @@ void PEAK_TROUGH_BARS_KCOUNT_STEP3(int DataLen, float* pfOUT, float* HIGH, float
 					posBotBars = i;
 					goal = SEARCHING_BOT;
 					pfOUT[curTopBars] = IS_PEAK;
+					lastStatus = IS_PEAK;
 				}
 				else if (LOW[i] < possibleBot)
 				{
@@ -640,6 +643,7 @@ void PEAK_TROUGH_BARS_KCOUNT_STEP3(int DataLen, float* pfOUT, float* HIGH, float
 					possibleBot = LOW[i];
 					goal = SEARCHING_BOT;
 					pfOUT[curTopBars] = IS_PEAK;
+					lastStatus = IS_PEAK;
 				}
 				else if (LOW[i] < LOW[curBotBars]) {
 					/* 
@@ -666,10 +670,21 @@ void PEAK_TROUGH_BARS_KCOUNT_STEP3(int DataLen, float* pfOUT, float* HIGH, float
 					possibleTop = HIGH[i];
 					goal = SEARCHING_TOP;
 					pfOUT[curBotBars] = IS_TROUGH;
+					lastStatus = IS_TROUGH;
 				}
 			}
 		}
 	}
+
+	if (lastStatus == IS_TROUGH)
+	{
+		pfOUT[posTopBars] = IS_PEAK;
+	}
+	else if (lastStatus == IS_PEAK)
+	{
+		pfOUT[posBotBars] = IS_TROUGH;
+	}
+
 	delete[] peaks_and_bottoms;
 }
 
