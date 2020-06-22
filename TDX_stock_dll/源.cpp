@@ -470,7 +470,13 @@ static INFLECTION_POINT PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT,
 		{
 			if (HIGH[i] >= possibleTop)
 			{
-				possibleBot = LOW[i];
+				if (LOW[i] <= possibleBot) {
+					// 后包前
+				}
+				else
+				{
+					possibleBot = LOW[i];				
+				}
 				possibleTop = HIGH[i];
 				posTopBars = i;
 			}
@@ -493,15 +499,26 @@ static INFLECTION_POINT PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT,
 				possibleTop = HIGH[i];
 				goal = SEARCHING_BOT;
 				lastStatus = IS_PEAK;
-			}else
-				goal = UNSURE;
+			}
+			else
+			{
+				// 前包后，处理包含关系
+				possibleBot = LOW[i];
+			}
 		}
 		else
 		{
 			if (LOW[i] <= possibleBot)
 			{
+				if (HIGH[i] >= possibleTop)
+				{
+					// 后包前，处理包含关系
+				}
+				else
+				{
+					possibleTop = HIGH[i];
+				}
 				possibleBot = LOW[i];
-				possibleTop = HIGH[i];
 				posBotBars = i;
 			}
 			else if (HIGH[i] > possibleTop)
@@ -525,7 +542,10 @@ static INFLECTION_POINT PEAK_TROUGH_BARS_KCOUNT_STEP1(int DataLen, float* pfOUT,
 				lastStatus = IS_TROUGH;
 			}
 			else
-				goal = UNSURE;
+			{
+				// 前包后
+				possibleTop = HIGH[i];
+			}
 
 		}
 	}
